@@ -118,6 +118,14 @@
 				{{ vehicleType }} · {{ days }} 天 · {{ people }} 人 · {{ formatNumber(totalMileage) }} 公里
 			</text>
 		</view>
+
+		<!-- 分享按钮（仅小程序端） -->
+		<!-- #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO -->
+		<button class="share-btn" open-type="share">
+			<uni-icons type="redo" size="18" color="#fff" />
+			<text>分享报告</text>
+		</button>
+		<!-- #endif -->
 	</view>
 </template>
 
@@ -228,17 +236,25 @@
 				}
 			}
 		},
-		onLoad() {
-			// 从 globalData 读取上一页传来的数据
+		onLoad(options) {
+			// 优先从 globalData 读取（站内跳转）
 			const app = getApp()
-			const data = app && app.globalData && app.globalData.reportData
-			if (data) {
-				this.applyData(data)
-				// 用完即清理，避免下次进入页面看到旧数据
+			const gd = app && app.globalData && app.globalData.reportData
+			if (gd) {
+				this.applyData(gd)
 				app.globalData.reportData = null
-				console.log('[report] received data:', data)
-			} else {
-				console.warn('[report] no reportData in globalData')
+				console.log('[report] data from globalData')
+				return
+			}
+			// 其次从分享链接参数恢复（其他用户点开分享卡片）
+			if (options && options.d) {
+				try {
+					const decoded = this.decodeShareData(options.d)
+					this.applyData(decoded)
+					console.log('[report] data from share link')
+				} catch (e) {
+					console.error('[report] decode share data failed:', e)
+				}
 			}
 		},
 		onReady() {
@@ -248,6 +264,22 @@
 				setTimeout(() => { this.reshow = false }, 200)
 			})
 		},
+		// #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO
+		onShareAppMessage() {
+			const encoded = this.encodeShareData()
+			return {
+				title: '自驾游预算报告：总花费 ¥' + this.formatMoney(this.totalCost),
+				path: '/pages/report/report?d=' + encoded
+			}
+		},
+		onShareTimeline() {
+			const encoded = this.encodeShareData()
+			return {
+				title: '自驾游预算报告：总花费 ¥' + this.formatMoney(this.totalCost),
+				query: 'd=' + encoded
+			}
+		},
+		// #endif
 		methods: {
 			applyData(data) {
 				this.totalMileage = data.totalMileage || 0
@@ -262,6 +294,51 @@
 					value: Number(c.value) || 0
 				}))
 				this.extraItems = data.extraItems || []
+			},
+			// 将当前页面数据编码为紧凑 URL 参数
+			encodeShareData() {
+				const compact = {
+					t: this.totalMileage,
+					p: this.people,
+					d: this.days,
+					v: this.vehicleType,
+					c: this.categories.map(c => Math.round(c.value * 100) / 100),
+					e: this.extraItems.map(item => ({
+						n: item.name,
+						a: Math.round((item.amount || 0) * 100) / 100,
+						p: item.isPerPerson ? 1 : 0,
+						t: Math.round((item.total || 0) * 100) / 100
+					}))
+				}
+				return encodeURIComponent(JSON.stringify(compact))
+			},
+			// 从 URL 参数解码为完整报告数据
+			decodeShareData(str) {
+				const compact = JSON.parse(decodeURIComponent(str))
+				const categoryKeys = ['driving', 'highway', 'hotel', 'meal', 'extra']
+				const categoryNames = ['行驶成本', '高速费', '住宿费', '餐饮费', '额外支出']
+				const cats = compact.c || []
+				const totalCost = cats.reduce((s, v) => s + (Number(v) || 0), 0)
+				const people = Math.max(1, compact.p || 1)
+				return {
+					totalMileage: compact.t || 0,
+					people,
+					days: compact.d || 0,
+					vehicleType: compact.v || '',
+					totalCost,
+					perPerson: totalCost / people,
+					categories: categoryKeys.map((k, i) => ({
+						key: k,
+						name: categoryNames[i],
+						value: Number(cats[i]) || 0
+					})),
+					extraItems: (compact.e || []).map(item => ({
+						name: item.n || '',
+						amount: Number(item.a) || 0,
+						isPerPerson: !!item.p,
+						total: Number(item.t) || 0
+					}))
+				}
 			},
 			colorOf(key) {
 				return COLOR_MAP[key] || '#9ca3af'
@@ -527,5 +604,29 @@
 	.trip-meta-text {
 		font-size: 24rpx;
 		color: var(--text-tertiary);
+	}
+
+	/* ============ 分享按钮 ============ */
+	.share-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 12rpx;
+		height: 88rpx;
+		margin-top: 24rpx;
+		border-radius: 24rpx;
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.28);
+		font-size: 30rpx;
+		font-weight: 600;
+		color: #fff;
+		letter-spacing: 2rpx;
+		border: none;
+	}
+	.share-btn::after {
+		border: none;
+	}
+	.share-btn:active {
+		opacity: 0.85;
 	}
 </style>
