@@ -8,6 +8,15 @@
 				"navigationBarBackgroundColor": "@navBgColor",
 				"backgroundColor": "@pageBgColor"
 			}
+		},
+		{
+			"path": "pages/report/report",
+			"style": {
+				"navigationBarTitleText": "费用估算报告",
+				"navigationBarTextStyle": "@navTxtStyle",
+				"navigationBarBackgroundColor": "@navBgColor",
+				"backgroundColor": "@pageBgColor"
+			}
 		}
 	],
 	"globalStyle": {

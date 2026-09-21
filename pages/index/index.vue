@@ -287,6 +287,14 @@
 			</view>
 		</view>
 
+		<!-- 估算总开销按钮 -->
+		<view class="estimate-btn-wrap">
+			<view class="estimate-btn" @tap="goReport">
+				<uni-icons type="bars" size="20" color="#fff" />
+				<text class="estimate-btn-text">估算总开销</text>
+			</view>
+		</view>
+
 		<!-- 删除确认弹窗 -->
 		<uni-popup ref="deletePopup" type="dialog">
 			<uni-popup-dialog
@@ -367,6 +375,97 @@
 			},
 			onCancelDelete() {
 				this.pendingDeleteIndex = null
+			},
+			// 计算预算
+			calcBudget() {
+				const form = this.form
+				const people = Math.max(1, Number(form.people) || 0)
+				const days = Math.max(1, Number(form.days) || 0)
+				// 总里程（往返按 2 倍计）
+				const totalMileage = Math.max(0, Number(form.mileage) || 0) * (form.isRoundTrip ? 2 : 1)
+
+				// 行驶成本
+				let drivingCost = 0
+				if (this.vehicleTab === 0) {
+					// 油车
+					const c = Number(this.gas.consumption) || 0
+					const p = Number(this.gas.price) || 0
+					drivingCost = totalMileage * c / 100 * p
+				} else if (this.vehicleTab === 1) {
+					// 电车
+					const c = Number(this.ev.consumption) || 0
+					const p = Number(this.ev.price) || 0
+					drivingCost = totalMileage * c / 100 * p
+				} else {
+					// 混动车：按纯电比例加权
+					const evC = Number(this.hybrid.evConsumption) || 0
+					const evP = Number(this.hybrid.evPrice) || 0
+					const fC = Number(this.hybrid.fuelConsumption) || 0
+					const fP = Number(this.hybrid.fuelPrice) || 0
+					const ratio = (Number(this.hybrid.evRatio) || 0) / 100
+					const evPart = totalMileage * evC / 100 * evP * ratio
+					const fuelPart = totalMileage * fC / 100 * fP * (1 - ratio)
+					drivingCost = evPart + fuelPart
+				}
+
+				// 高速费
+				const highwayCost = form.useHighway ? totalMileage * 0.5 : 0
+				// 住宿费
+				const hotelCost = (Number(form.hotelPerDay) || 0) * days
+				// 餐饮费
+				const mealCost = (Number(form.mealPerDay) || 0) * people * days
+				// 额外支出
+				let extraCost = 0
+				const extraItems = this.extraItems.map(item => {
+					const amt = Number(item.amount) || 0
+					const total = item.isPerPerson ? amt * people : amt
+					extraCost += total
+					return {
+						name: item.name || '未命名',
+						amount: amt,
+						isPerPerson: !!item.isPerPerson,
+						total
+					}
+				})
+
+				const totalCost = drivingCost + highwayCost + hotelCost + mealCost + extraCost
+				const perPerson = totalCost / people
+
+				return {
+					totalMileage,
+					people,
+					days,
+					vehicleType: this.vehicleTabs[this.vehicleTab],
+					totalCost,
+					perPerson,
+					categories: [
+						{ key: 'driving', name: '行驶成本', value: drivingCost },
+						{ key: 'highway', name: '高速费', value: highwayCost },
+						{ key: 'hotel', name: '住宿费', value: hotelCost },
+						{ key: 'meal', name: '餐饮费', value: mealCost },
+						{ key: 'extra', name: '额外支出', value: extraCost }
+					],
+					extraItems
+				}
+			},
+			goReport() {
+				console.log('[goReport] button tapped')
+				const data = this.calcBudget()
+				console.log('[goReport] calc result:', data)
+				// 用 globalData 传参，最稳定可靠
+				const app = getApp()
+				app.globalData = app.globalData || {}
+				app.globalData.reportData = data
+				uni.navigateTo({
+					url: '/pages/report/report',
+					success: () => {
+						console.log('[goReport] navigate success')
+					},
+					fail: (err) => {
+						console.error('[goReport] navigate fail:', err)
+						uni.showToast({ title: '跳转失败：' + (err.errMsg || '未知错误'), icon: 'none' })
+					}
+				})
 			}
 		}
 	}
@@ -657,5 +756,31 @@
 		font-size: 28rpx;
 		color: var(--primary);
 		font-weight: 500;
+	}
+
+	/* 估算总开销按钮 */
+	.estimate-btn-wrap {
+		padding: 8rpx 0 16rpx;
+	}
+	.estimate-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 12rpx;
+		height: 96rpx;
+		border-radius: 24rpx;
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		box-shadow: 0 8rpx 24rpx rgba(16, 185, 129, 0.28);
+		transition: transform 0.12s ease, box-shadow 0.12s ease;
+	}
+	.estimate-btn:active {
+		transform: translateY(2rpx);
+		box-shadow: 0 4rpx 12rpx rgba(16, 185, 129, 0.22);
+	}
+	.estimate-btn-text {
+		font-size: 32rpx;
+		font-weight: 600;
+		color: #fff;
+		letter-spacing: 2rpx;
 	}
 </style>
