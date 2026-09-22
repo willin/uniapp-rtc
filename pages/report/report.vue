@@ -146,9 +146,9 @@
 			<!-- #endif -->
 		</view>
 
-		<!-- 海报生成 canvas（离屏） -->
+		<!-- 海报生成 canvas（离屏，使用 Canvas 2D API） -->
 		<canvas
-			canvas-id="posterCanvas"
+			type="2d"
 			id="posterCanvas"
 			class="poster-canvas"
 			:style="{ width: posterWidth + 'px', height: posterHeight + 'px' }"
@@ -429,325 +429,345 @@
 					+ footerH + padBottom
 				this.posterHeight = H
 
-				// 直接绘制（暂不绘制小程序码图片，排查 drawImage 导致的卡死问题）
-				this.$nextTick(() => {
-					this.drawPoster(W, H, '')
+				// 获取小程序码图片信息，成功回调中绘制海报
+				uni.getImageInfo({
+					src: '/static/minicode.jpg',
+					success: (qrRes) => {
+						console.log('[poster] getImageInfo success:', qrRes.path)
+						// 真机上 createImage 可能需要以 / 开头的包内绝对路径
+						let path = qrRes.path
+						if (path && path.indexOf('/') !== 0 && path.indexOf('wxfile://') !== 0 && path.indexOf('http') !== 0) {
+							path = '/' + path
+						}
+						this.$nextTick(() => {
+							this.drawPoster(W, H, path)
+						})
+					},
+					fail: (err) => {
+						console.warn('[poster] getImageInfo fail:', err)
+						// 获取失败仍生成海报（不绘制二维码，仅绘制文字）
+						this.$nextTick(() => {
+							this.drawPoster(W, H, '')
+						})
+					}
 				})
 			},
-			// 绘制海报
+			// 绘制海报（使用 Canvas 2D API）
 			drawPoster(W, H, qrPath) {
 				try {
-				const ctx = uni.createCanvasContext('posterCanvas', this)
-				const visible = this.visibleCategories
-				const extraItems = this.extraItems || []
+				uni.createSelectorQuery()
+					.select('#posterCanvas')
+					.fields({ node: true, size: true })
+					.exec((res) => {
+						if (!res || !res[0] || !res[0].node) {
+							console.error('[poster] canvas node not found')
+							this.posterGenerating = false
+							uni.showToast({ title: '画布初始化失败', icon: 'none' })
+							return
+						}
+						const canvas = res[0].node
+						const ctx = canvas.getContext('2d')
+						const dpr = uni.getSystemInfoSync().pixelRatio || 2
+						// 设置画布像素尺寸（高清）
+						canvas.width = W * dpr
+						canvas.height = H * dpr
+						ctx.scale(dpr, dpr)
 
-				// 背景
-				ctx.setFillStyle('#f5f7fa')
-				ctx.fillRect(0, 0, W, H)
+						const visible = this.visibleCategories
+						const extraItems = this.extraItems || []
+						const setFont = (size) => { ctx.font = size + 'px sans-serif' }
 
-				let y = 40
+						// 背景
+						ctx.fillStyle = '#f5f7fa'
+						ctx.fillRect(0, 0, W, H)
 
-				// ===== 顶部标题卡片 =====
-				const headerX = 24
-				const headerY = y
-				const headerW = W - 48
-				const headerH = 70
-				ctx.setFillStyle('#ffffff')
-				this.roundRect(ctx, headerX, headerY, headerW, headerH, 14)
-				ctx.fill()
+						let y = 40
 
-				ctx.setFillStyle('#1f2937')
-				ctx.setFontSize(20)
-				ctx.setTextBaseline('middle')
-				ctx.fillText('自驾游开销报告', headerX + 20, headerY + headerH / 2)
-
-				const dateStr = this.formatDate(new Date())
-				ctx.setFillStyle('#9ca3af')
-				ctx.setFontSize(13)
-				const dateW = ctx.measureText(dateStr).width
-				ctx.fillText(dateStr, headerX + headerW - 20 - dateW, headerY + headerH / 2)
-				y += headerH + 16
-
-				// ===== 摘要卡片 =====
-				const summaryX = 24
-				const summaryY = y
-				const summaryW = W - 48
-				const summaryH = 200
-				const grd = ctx.createLinearGradient(summaryX, summaryY, summaryX, summaryY + summaryH)
-				grd.addColorStop(0, '#10b981')
-				grd.addColorStop(1, '#059669')
-				ctx.setFillStyle(grd)
-				this.roundRect(ctx, summaryX, summaryY, summaryW, summaryH, 16)
-				ctx.fill()
-
-				// 总花费标签
-				ctx.setFillStyle('rgba(255,255,255,0.85)')
-				ctx.setFontSize(15)
-				ctx.setTextAlign('center')
-				ctx.fillText('总花费', W / 2, summaryY + 32)
-
-				// 总花费金额
-				ctx.setFillStyle('#ffffff')
-				ctx.setFontSize(42)
-				ctx.fillText('¥' + this.formatMoney(this.totalCost), W / 2, summaryY + 80)
-
-				// 分割线
-				ctx.setStrokeStyle('rgba(255,255,255,0.25)')
-				ctx.setLineWidth(1)
-				ctx.beginPath()
-				ctx.moveTo(summaryX + 20, summaryY + 120)
-				ctx.lineTo(summaryX + summaryW - 20, summaryY + 120)
-				ctx.stroke()
-
-				// 三列指标
-				const stats = [
-					{ v: '¥' + this.formatMoney3(this.costPerKm), l: '每公里' },
-					{ v: '¥' + this.formatMoney(this.perPerson), l: this.people + '人人均' },
-					{ v: this.formatNumber(this.totalMileage) + 'km', l: '总里程' }
-				]
-				const statY1 = summaryY + 150
-				const statY2 = summaryY + 175
-				stats.forEach((s, i) => {
-					const cx = summaryX + (summaryW / 4) * (i + 1)
-					ctx.setFillStyle('#ffffff')
-					ctx.setFontSize(17)
-					ctx.fillText(s.v, cx, statY1)
-					ctx.setFillStyle('rgba(255,255,255,0.8)')
-					ctx.setFontSize(11)
-					ctx.fillText(s.l, cx, statY2)
-				})
-				ctx.setTextAlign('left')
-				y += summaryH + 16
-
-				// ===== 费用占比（玫瑰图：半径随数值变化） =====
-				// 卡片背景（含标题 + 玫瑰图 + 图例）
-				const pieCardX = 24
-				const pieCardY = y
-				const pieCardW = W - 48
-				const pieCardH = 280
-				ctx.setFillStyle('#ffffff')
-				this.roundRect(ctx, pieCardX, pieCardY, pieCardW, pieCardH, 14)
-				ctx.fill()
-				// 标题（与费用明细卡片标题格式统一）
-				ctx.setFillStyle('#1f2937')
-				ctx.setFontSize(16)
-				ctx.fillText('费用占比', pieCardX + 20, pieCardY + 28)
-				const pieCenterX = W / 2
-				const pieCenterY = pieCardY + 130
-				const maxR = 80
-				const minR = 28
-				// 找出最大值用于归一化半径
-				const maxValue = visible.reduce((m, c) => Math.max(m, c.value), 0) || 1
-				let startAngle = -Math.PI / 2
-				// 先绘制所有扇区，再统一绘制外部标签（避免覆盖）
-				visible.forEach(c => {
-					const ratio = this.totalCost > 0 ? c.value / this.totalCost : 0
-					const endAngle = startAngle + ratio * Math.PI * 2
-					const r = minR + (c.value / maxValue) * (maxR - minR)
-					ctx.beginPath()
-					ctx.moveTo(pieCenterX, pieCenterY)
-					ctx.arc(pieCenterX, pieCenterY, r, startAngle, endAngle)
-					ctx.closePath()
-					ctx.setFillStyle(COLOR_MAP[c.key])
-					ctx.fill()
-					// 扇区之间加白边分隔
-					ctx.setStrokeStyle('#f5f7fa')
-					ctx.setLineWidth(2)
-					ctx.stroke()
-					startAngle = endAngle
-				})
-				// 外部标签：点 + 引导线 + 百分比文字（与页面 ucharts 风格一致）
-				startAngle = -Math.PI / 2
-				visible.forEach(c => {
-					const ratio = this.totalCost > 0 ? c.value / this.totalCost : 0
-					const endAngle = startAngle + ratio * Math.PI * 2
-					const r = minR + (c.value / maxValue) * (maxR - minR)
-					const midAngle = (startAngle + endAngle) / 2
-					// 扇区边缘点
-					const dotX = pieCenterX + Math.cos(midAngle) * r
-					const dotY = pieCenterY + Math.sin(midAngle) * r
-					// 引导线终点（向外延伸一段）
-					const lineEndR = maxR + 18
-					const lineX = pieCenterX + Math.cos(midAngle) * lineEndR
-					const lineY = pieCenterY + Math.sin(midAngle) * lineEndR
-					// 文字位置：右侧标签左对齐，右侧右对齐
-					const isRight = Math.cos(midAngle) >= 0
-					const textX = isRight ? lineX + 6 : lineX - 6
-					const textY = lineY
-					const pct = this.percentOf(c.value) + '%'
-					// 引导线
-					ctx.setStrokeStyle(COLOR_MAP[c.key])
-					ctx.setLineWidth(1)
-					ctx.beginPath()
-					ctx.moveTo(dotX, dotY)
-					ctx.lineTo(lineX, lineY)
-					ctx.stroke()
-					// 末端圆点
-					ctx.beginPath()
-					ctx.arc(lineX, lineY, 2, 0, Math.PI * 2)
-					ctx.setFillStyle(COLOR_MAP[c.key])
-					ctx.fill()
-					// 百分比文字
-					ctx.setFillStyle('#374151')
-					ctx.setFontSize(11)
-					ctx.setTextAlign(isRight ? 'left' : 'right')
-					ctx.fillText(pct, textX, textY + 3)
-					ctx.setTextAlign('left')
-					startAngle = endAngle
-				})
-
-				// ===== 图例（居中显示，放在卡片内底部） =====
-				ctx.setFontSize(11)
-				let legendTotalW = 0
-				const legendItems = visible.map(c => {
-					const nameW = ctx.measureText(c.name).width
-					const itemW = 10 + 4 + nameW
-					legendTotalW += itemW
-					return { c, nameW, itemW }
-				})
-				legendTotalW += (visible.length - 1) * 16
-				const legendY = pieCardY + pieCardH - 25
-				let lx = (W - legendTotalW) / 2
-				legendItems.forEach(({ c, nameW }) => {
-					ctx.setFillStyle(COLOR_MAP[c.key])
-					ctx.fillRect(lx, legendY - 5, 10, 10)
-					ctx.setFillStyle('#6b7280')
-					ctx.fillText(c.name, lx + 14, legendY + 2)
-					lx += 10 + 4 + nameW + 16
-				})
-				y += pieCardH + 16
-
-				// ===== 费用明细 =====
-				ctx.setFillStyle('#ffffff')
-				const bdX = 24
-				const bdY = y
-				const bdW = W - 48
-				const bdH = 50 + visible.length * 62
-				this.roundRect(ctx, bdX, bdY, bdW, bdH, 14)
-				ctx.fill()
-
-				ctx.setFillStyle('#1f2937')
-				ctx.setFontSize(16)
-				ctx.fillText('费用明细', bdX + 20, bdY + 28)
-
-				visible.forEach((c, i) => {
-					const rowY = bdY + 52 + i * 62
-					// 色点
-					ctx.setFillStyle(COLOR_MAP[c.key])
-					ctx.fillRect(bdX + 20, rowY - 6, 10, 10)
-					// 名称
-					ctx.setFillStyle('#1f2937')
-					ctx.setFontSize(14)
-					ctx.fillText(c.name, bdX + 40, rowY)
-					// 百分比
-					const pct = this.percentOf(c.value) + '%'
-					ctx.setFillStyle('#9ca3af')
-					ctx.setFontSize(12)
-					const pctW = ctx.measureText(pct).width
-					ctx.fillText(pct, bdX + bdW - 140 - pctW, rowY)
-					// 金额
-					const amt = '¥' + this.formatMoney(c.value)
-					ctx.setFillStyle('#1f2937')
-					ctx.setFontSize(15)
-					ctx.setTextAlign('right')
-					ctx.fillText(amt, bdX + bdW - 20, rowY)
-					ctx.setTextAlign('left')
-					// 进度条背景
-					ctx.setFillStyle('#f3f4f6')
-					this.roundRect(ctx, bdX + 40, rowY + 14, bdW - 60, 8, 4)
-					ctx.fill()
-					// 进度条填充
-					ctx.setFillStyle(COLOR_MAP[c.key])
-					const fillW = (bdW - 60) * (c.value / (this.totalCost || 1))
-					this.roundRect(ctx, bdX + 40, rowY + 14, fillW, 8, 4)
-					ctx.fill()
-				})
-				y += bdH + 16
-
-				// ===== 额外支出明细（仅当有额外支出时） =====
-				if (extraItems && extraItems.length > 0) {
-					ctx.setFillStyle('#ffffff')
-					const exX = 24
-					const exY = y
-					const exW = W - 48
-					const exH = 50 + extraItems.length * 52
-					this.roundRect(ctx, exX, exY, exW, exH, 14)
-					ctx.fill()
-
-					ctx.setFillStyle('#1f2937')
-					ctx.setFontSize(16)
-					ctx.fillText('额外支出明细', exX + 20, exY + 28)
-
-					extraItems.forEach((item, i) => {
-						const rowY = exY + 50 + i * 52
-						// 项目名称
-						ctx.setFillStyle('#1f2937')
-						ctx.setFontSize(14)
-						ctx.fillText(item.name || '未命名', exX + 20, rowY)
-						// 人均/总计标签
-						const tag = item.isPerPerson ? '人均' : '总计'
-						const tagW = ctx.measureText(tag).width
-						ctx.setFillStyle(item.isPerPerson ? '#d1fae5' : '#f3f4f6')
-						this.roundRect(ctx, exX + exW - 140 - tagW - 16, rowY - 9, tagW + 16, 18, 9)
+						// ===== 顶部标题卡片 =====
+						const headerX = 24
+						const headerY = y
+						const headerW = W - 48
+						const headerH = 70
+						ctx.fillStyle = '#ffffff'
+						this.roundRect(ctx, headerX, headerY, headerW, headerH, 14)
 						ctx.fill()
-						ctx.setFillStyle(item.isPerPerson ? '#10b981' : '#6b7280')
-						ctx.setFontSize(11)
-						ctx.fillText(tag, exX + exW - 140 - tagW - 8, rowY)
-						// 金额
-						const amt = '¥' + this.formatMoney(item.total)
-						ctx.setFillStyle('#1f2937')
-						ctx.setFontSize(15)
-						ctx.setTextAlign('right')
-						ctx.fillText(amt, exX + exW - 20, rowY)
-						ctx.setTextAlign('left')
-					})
-					y += exH + 16
-				}
 
-				// ===== 底部小程序码 + 宣传文字（始终绘制文字，图片尽力绘制） =====
-				const footerY = y
-				const qrSize = 100
-				const qrX = W / 2 - qrSize / 2
-				// 小程序码（临时注释以排查 drawImage 是否导致生成卡死）
-				// if (qrPath) {
-				// 	try {
-				// 		ctx.drawImage(qrPath, qrX, footerY, qrSize, qrSize)
-				// 	} catch (e) {
-				// 		console.warn('[poster] drawImage qr fail:', e)
-				// 	}
-				// }
-				// 标题和副标题（无论图片是否成功都绘制）
-				ctx.setFillStyle('#1f2937')
-				ctx.setFontSize(16)
-				ctx.setTextAlign('center')
-				ctx.fillText('自驾游预算计算器', W / 2, footerY + qrSize + 24)
-				ctx.setFillStyle('#9ca3af')
-				ctx.setFontSize(12)
-				ctx.fillText('扫码进入小程序，估算你的旅行开销', W / 2, footerY + qrSize + 44)
-				ctx.setTextAlign('left')
+						ctx.fillStyle = '#1f2937'
+						setFont(20)
+						ctx.textBaseline = 'middle'
+						ctx.fillText('自驾游开销报告', headerX + 20, headerY + headerH / 2)
 
-				console.log('[poster] drawing complete, calling ctx.draw, H=', H)
-				ctx.draw(false, () => {
-					console.log('[poster] ctx.draw callback fired')
-					setTimeout(() => {
-						uni.canvasToTempFilePath({
-							canvasId: 'posterCanvas',
-							width: W,
-							height: H,
-							destWidth: W * 2,
-							destHeight: H * 2,
-							success: (res) => {
-								this.posterImage = res.tempFilePath
-								this.posterGenerating = false
-							},
-							fail: (err) => {
-								console.error('[poster] canvasToTempFilePath fail:', err)
-								this.posterGenerating = false
-								uni.showToast({ title: '生成失败，请重试', icon: 'none' })
+						const dateStr = this.formatDate(new Date())
+						ctx.fillStyle = '#9ca3af'
+						setFont(13)
+						const dateW = ctx.measureText(dateStr).width
+						ctx.fillText(dateStr, headerX + headerW - 20 - dateW, headerY + headerH / 2)
+						y += headerH + 16
+
+						// ===== 摘要卡片 =====
+						const summaryX = 24
+						const summaryY = y
+						const summaryW = W - 48
+						const summaryH = 200
+						const grd = ctx.createLinearGradient(summaryX, summaryY, summaryX, summaryY + summaryH)
+						grd.addColorStop(0, '#10b981')
+						grd.addColorStop(1, '#059669')
+						ctx.fillStyle = grd
+						this.roundRect(ctx, summaryX, summaryY, summaryW, summaryH, 16)
+						ctx.fill()
+
+						ctx.fillStyle = 'rgba(255,255,255,0.85)'
+						setFont(15)
+						ctx.textAlign = 'center'
+						ctx.fillText('总花费', W / 2, summaryY + 32)
+
+						ctx.fillStyle = '#ffffff'
+						setFont(42)
+						ctx.fillText('¥' + this.formatMoney(this.totalCost), W / 2, summaryY + 80)
+
+						ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+						ctx.lineWidth = 1
+						ctx.beginPath()
+						ctx.moveTo(summaryX + 20, summaryY + 120)
+						ctx.lineTo(summaryX + summaryW - 20, summaryY + 120)
+						ctx.stroke()
+
+						const stats = [
+							{ v: '¥' + this.formatMoney3(this.costPerKm), l: '每公里' },
+							{ v: '¥' + this.formatMoney(this.perPerson), l: this.people + '人人均' },
+							{ v: this.formatNumber(this.totalMileage) + 'km', l: '总里程' }
+						]
+						const statY1 = summaryY + 150
+						const statY2 = summaryY + 175
+						stats.forEach((s, i) => {
+							const cx = summaryX + (summaryW / 4) * (i + 1)
+							ctx.fillStyle = '#ffffff'
+							setFont(17)
+							ctx.fillText(s.v, cx, statY1)
+							ctx.fillStyle = 'rgba(255,255,255,0.8)'
+							setFont(11)
+							ctx.fillText(s.l, cx, statY2)
+						})
+						ctx.textAlign = 'left'
+						y += summaryH + 16
+
+						// ===== 费用占比（玫瑰图） =====
+						const pieCardX = 24
+						const pieCardY = y
+						const pieCardW = W - 48
+						const pieCardH = 280
+						ctx.fillStyle = '#ffffff'
+						this.roundRect(ctx, pieCardX, pieCardY, pieCardW, pieCardH, 14)
+						ctx.fill()
+
+						ctx.fillStyle = '#1f2937'
+						setFont(16)
+						ctx.fillText('费用占比', pieCardX + 20, pieCardY + 28)
+						const pieCenterX = W / 2
+						const pieCenterY = pieCardY + 130
+						const maxR = 80
+						const minR = 28
+						const maxValue = visible.reduce((m, c) => Math.max(m, c.value), 0) || 1
+						let startAngle = -Math.PI / 2
+						visible.forEach(c => {
+							const ratio = this.totalCost > 0 ? c.value / this.totalCost : 0
+							const endAngle = startAngle + ratio * Math.PI * 2
+							const r = minR + (c.value / maxValue) * (maxR - minR)
+							ctx.beginPath()
+							ctx.moveTo(pieCenterX, pieCenterY)
+							ctx.arc(pieCenterX, pieCenterY, r, startAngle, endAngle)
+							ctx.closePath()
+							ctx.fillStyle = COLOR_MAP[c.key]
+							ctx.fill()
+							ctx.strokeStyle = '#f5f7fa'
+							ctx.lineWidth = 2
+							ctx.stroke()
+							startAngle = endAngle
+						})
+						// 外部标签
+						startAngle = -Math.PI / 2
+						visible.forEach(c => {
+							const ratio = this.totalCost > 0 ? c.value / this.totalCost : 0
+							const endAngle = startAngle + ratio * Math.PI * 2
+							const r = minR + (c.value / maxValue) * (maxR - minR)
+							const midAngle = (startAngle + endAngle) / 2
+							const dotX = pieCenterX + Math.cos(midAngle) * r
+							const dotY = pieCenterY + Math.sin(midAngle) * r
+							const lineEndR = maxR + 18
+							const lineX = pieCenterX + Math.cos(midAngle) * lineEndR
+							const lineY = pieCenterY + Math.sin(midAngle) * lineEndR
+							const isRight = Math.cos(midAngle) >= 0
+							const textX = isRight ? lineX + 6 : lineX - 6
+							const pct = this.percentOf(c.value) + '%'
+							ctx.strokeStyle = COLOR_MAP[c.key]
+							ctx.lineWidth = 1
+							ctx.beginPath()
+							ctx.moveTo(dotX, dotY)
+							ctx.lineTo(lineX, lineY)
+							ctx.stroke()
+							ctx.beginPath()
+							ctx.arc(lineX, lineY, 2, 0, Math.PI * 2)
+							ctx.fillStyle = COLOR_MAP[c.key]
+							ctx.fill()
+							ctx.fillStyle = '#374151'
+							setFont(11)
+							ctx.textAlign = isRight ? 'left' : 'right'
+							ctx.fillText(pct, textX, lineY + 3)
+							ctx.textAlign = 'left'
+							startAngle = endAngle
+						})
+
+						// 图例
+						setFont(11)
+						let legendTotalW = 0
+						const legendItems = visible.map(c => {
+							const nameW = ctx.measureText(c.name).width
+							legendTotalW += 10 + 4 + nameW
+							return { c, nameW }
+						})
+						legendTotalW += (visible.length - 1) * 16
+						const legendY = pieCardY + pieCardH - 25
+						let lx = (W - legendTotalW) / 2
+						legendItems.forEach(({ c, nameW }) => {
+							ctx.fillStyle = COLOR_MAP[c.key]
+							ctx.fillRect(lx, legendY - 5, 10, 10)
+							ctx.fillStyle = '#6b7280'
+							ctx.fillText(c.name, lx + 14, legendY + 2)
+							lx += 10 + 4 + nameW + 16
+						})
+						y += pieCardH + 16
+
+						// ===== 费用明细 =====
+						ctx.fillStyle = '#ffffff'
+						const bdX = 24
+						const bdY = y
+						const bdW = W - 48
+						const bdH = 50 + visible.length * 62
+						this.roundRect(ctx, bdX, bdY, bdW, bdH, 14)
+						ctx.fill()
+
+						ctx.fillStyle = '#1f2937'
+						setFont(16)
+						ctx.fillText('费用明细', bdX + 20, bdY + 28)
+
+						visible.forEach((c, i) => {
+							const rowY = bdY + 52 + i * 62
+							ctx.fillStyle = COLOR_MAP[c.key]
+							ctx.fillRect(bdX + 20, rowY - 6, 10, 10)
+							ctx.fillStyle = '#1f2937'
+							setFont(14)
+							ctx.fillText(c.name, bdX + 40, rowY)
+							const pct = this.percentOf(c.value) + '%'
+							ctx.fillStyle = '#9ca3af'
+							setFont(12)
+							const pctW = ctx.measureText(pct).width
+							ctx.fillText(pct, bdX + bdW - 140 - pctW, rowY)
+							const amt = '¥' + this.formatMoney(c.value)
+							ctx.fillStyle = '#1f2937'
+							setFont(15)
+							ctx.textAlign = 'right'
+							ctx.fillText(amt, bdX + bdW - 20, rowY)
+							ctx.textAlign = 'left'
+							ctx.fillStyle = '#f3f4f6'
+							this.roundRect(ctx, bdX + 40, rowY + 14, bdW - 60, 8, 4)
+							ctx.fill()
+							ctx.fillStyle = COLOR_MAP[c.key]
+							const fillW = (bdW - 60) * (c.value / (this.totalCost || 1))
+							this.roundRect(ctx, bdX + 40, rowY + 14, fillW, 8, 4)
+							ctx.fill()
+						})
+						y += bdH + 16
+
+						// ===== 额外支出明细 =====
+						if (extraItems && extraItems.length > 0) {
+							ctx.fillStyle = '#ffffff'
+							const exX = 24
+							const exY = y
+							const exW = W - 48
+							const exH = 50 + extraItems.length * 52
+							this.roundRect(ctx, exX, exY, exW, exH, 14)
+							ctx.fill()
+							ctx.fillStyle = '#1f2937'
+							setFont(16)
+							ctx.fillText('额外支出明细', exX + 20, exY + 28)
+							extraItems.forEach((item, i) => {
+								const rowY = exY + 50 + i * 52
+								ctx.fillStyle = '#1f2937'
+								setFont(14)
+								ctx.fillText(item.name || '未命名', exX + 20, rowY)
+								const tag = item.isPerPerson ? '人均' : '总计'
+								const tagW = ctx.measureText(tag).width
+								ctx.fillStyle = item.isPerPerson ? '#d1fae5' : '#f3f4f6'
+								this.roundRect(ctx, exX + exW - 140 - tagW - 16, rowY - 9, tagW + 16, 18, 9)
+								ctx.fill()
+								ctx.fillStyle = item.isPerPerson ? '#10b981' : '#6b7280'
+								setFont(11)
+								ctx.fillText(tag, exX + exW - 140 - tagW - 8, rowY)
+								const amt = '¥' + this.formatMoney(item.total)
+								ctx.fillStyle = '#1f2937'
+								setFont(15)
+								ctx.textAlign = 'right'
+								ctx.fillText(amt, exX + exW - 20, rowY)
+								ctx.textAlign = 'left'
+							})
+							y += exH + 16
+						}
+
+						// ===== 底部小程序码 + 宣传文字 =====
+						const footerY = y
+						const qrSize = 100
+						const qrX = W / 2 - qrSize / 2
+						// 宣传文字（先绘制，图片后绘制在上层）
+						ctx.fillStyle = '#1f2937'
+						setFont(16)
+						ctx.textAlign = 'center'
+						ctx.fillText('自驾游预算计算器', W / 2, footerY + qrSize + 24)
+						ctx.fillStyle = '#9ca3af'
+						setFont(12)
+						ctx.fillText('扫码进入小程序，估算你的旅行开销', W / 2, footerY + qrSize + 44)
+						ctx.textAlign = 'left'
+
+						// 导出图片的函数
+						const exportImg = () => {
+							setTimeout(() => {
+								uni.canvasToTempFilePath({
+									canvas: canvas,
+									x: 0,
+									y: 0,
+									width: W,
+									height: H,
+									destWidth: W * 2,
+									destHeight: H * 2,
+									success: (res) => {
+										this.posterImage = res.tempFilePath
+										this.posterGenerating = false
+									},
+									fail: (err) => {
+										console.error('[poster] canvasToTempFilePath fail:', err)
+										this.posterGenerating = false
+										uni.showToast({ title: '生成失败，请重试', icon: 'none' })
+									}
+								})
+							}, 100)
+						}
+
+						// 绘制小程序码（使用 Canvas 2D 的 createImage 加载）
+						if (qrPath) {
+							const img = canvas.createImage()
+							img.onload = () => {
+								console.log('[poster] qr image loaded, drawing')
+								ctx.drawImage(img, qrX, footerY, qrSize, qrSize)
+								exportImg()
 							}
-						}, this)
-					}, 300)
-				})
+							img.onerror = (e) => {
+								console.error('[poster] qr image load error:', e)
+								exportImg()
+							}
+							img.src = qrPath
+						} else {
+							exportImg()
+						}
+					})
 				// 安全超时：8 秒后若仍在生成中，强制结束避免卡死
 				setTimeout(() => {
 					if (this.posterGenerating) {

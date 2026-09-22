@@ -1,0 +1,45 @@
+{
+  "data": [
+    {
+      "id": "image-001",
+      "title": "自驾游开销计算器 Logo",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1790084471042,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "naturalSize": {
+          "width": 1920,
+          "height": 1920
+        }
+      },
+      "devMetadata": {
+        "imageSrc": "assets/road-trip-expense-calculator-logo.jpg"
+      }
+    },
+    {
+      "id": "image-002",
+      "title": "自驾游开销计算器 Logo 透明背景",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1790084471042,
+      "canvasData": {
+        "x": 480,
+        "y": 0,
+        "naturalSize": {
+          "width": 1920,
+          "height": 1920
+        }
+      },
+      "devMetadata": {
+        "imageSrc": "assets/road-trip-expense-calculator-logo-transparent.png"
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": true,
+    "deviceType": "freeSize",
+    "projectName": "自驾游开销计算器 Logo"
+  }
+}
