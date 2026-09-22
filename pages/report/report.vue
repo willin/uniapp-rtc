@@ -431,7 +431,7 @@
 
 				// 获取小程序码图片信息，成功回调中绘制海报
 				uni.getImageInfo({
-					src: '/static/minicode.jpg',
+					src: '/static/minicode.png',
 					success: (qrRes) => {
 						console.log('[poster] getImageInfo success:', qrRes.path)
 						// 真机上 createImage 可能需要以 / 开头的包内绝对路径
