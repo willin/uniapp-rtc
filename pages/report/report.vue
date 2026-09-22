@@ -1,20 +1,28 @@
 <template>
 	<view class="report-page">
-		<!-- 顶部摘要：预计总花费 / 人均花费 -->
-		<view class="summary-row" :class="{ 'summary-single': people <= 1 }">
-			<view class="summary-card">
-				<view class="summary-label">预计总花费</view>
-				<view class="summary-amount">¥{{ formatMoney(totalCost) }}</view>
-				<view class="summary-sub">总里程 {{ formatNumber(totalMileage) }} 公里</view>
-			</view>
-			<view v-if="people > 1" class="summary-card">
-				<view class="summary-label">人均花费</view>
-				<view class="summary-amount">¥{{ formatMoney(perPerson) }}</view>
-				<view class="summary-sub">总花费 ÷ {{ people }} 人</view>
+		<!-- 顶部摘要：单卡片总览 -->
+		<view class="summary-hero">
+			<view class="summary-hero-label">总花费</view>
+			<view class="summary-hero-amount">¥{{ formatMoney(totalCost) }}</view>
+			<view class="summary-hero-divider"></view>
+			<view class="summary-hero-stats">
+				<view class="stat-item">
+					<view class="stat-value">¥{{ formatMoney3(costPerKm) }}</view>
+					<view class="stat-label">每公里</view>
+				</view>
+				<view class="stat-divider"></view>
+				<view class="stat-item">
+					<view class="stat-value">¥{{ formatMoney(perPerson) }}</view>
+					<view class="stat-label">{{ people }}人人均</view>
+				</view>
+				<view class="stat-divider"></view>
+				<view class="stat-item">
+					<view class="stat-value">{{ formatNumber(totalMileage) }}km</view>
+					<view class="stat-label">总里程</view>
+				</view>
 			</view>
 		</view>
 
-		<!-- 图表区：费用占比 + 费用对比（纵向堆叠，让每个图表更大更清晰） -->
 		<view class="chart-card chart-card-full">
 			<view class="chart-title">
 				<view class="chart-title-bar"></view>
@@ -25,20 +33,6 @@
 					type="rose"
 					:chartData="pieData"
 					:opts="pieOpts"
-					:reshow="reshow"
-				/>
-			</view>
-		</view>
-		<view class="chart-card chart-card-full">
-			<view class="chart-title">
-				<view class="chart-title-bar"></view>
-				<text>费用对比</text>
-			</view>
-			<view class="chart-box chart-box-tall">
-				<qiun-data-charts
-					type="column"
-					:chartData="columnData"
-					:opts="columnOpts"
 					:reshow="reshow"
 				/>
 			</view>
@@ -123,7 +117,7 @@
 		<!-- #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO -->
 		<button class="share-btn" open-type="share">
 			<uni-icons type="redo" size="18" color="#fff" />
-			<text>分享报告</text>
+			<text>报告分享</text>
 		</button>
 		<!-- #endif -->
 	</view>
@@ -155,6 +149,13 @@
 			}
 		},
 		computed: {
+			// 每公里行驶成本（仅行驶成本 ÷ 总里程，不含住宿餐饮等）
+			costPerKm() {
+				if (this.totalMileage <= 0) return 0
+				const driving = this.categories.find(c => c.key === 'driving')
+				const drivingCost = driving ? Number(driving.value) : 0
+				return drivingCost / this.totalMileage
+			},
 			// 过滤掉金额为 0 的分类（如未走高速时隐藏高速费）
 			visibleCategories() {
 				return this.categories.filter(c => c.value > 0)
@@ -194,47 +195,6 @@
 					}
 				}
 			},
-			// 垂直柱状图数据
-			columnData() {
-				return {
-					categories: this.visibleCategories.map(c => c.name),
-					series: [{
-						name: '费用',
-						data: this.visibleCategories.map(c => ({
-							value: Number(c.value.toFixed(2)),
-							color: COLOR_MAP[c.key]
-						}))
-					}]
-				}
-			},
-			columnOpts() {
-				return {
-					color: COLOR_LIST,
-					padding: [20, 10, 0, 10],
-					legend: { show: false },
-					xAxis: {
-						disableGrid: true,
-						fontSize: 9,
-						rotateLabel: false,
-						lineHeight: 12,
-						disabled: false
-					},
-					yAxis: {
-						disabled: true,
-						disableGrid: true
-					},
-					extra: {
-						column: {
-							type: 'group',
-							width: 18,
-							barBorderRadius: [4, 4, 0, 0]
-						}
-					},
-					labelLayout: {
-						hideOverlap: true
-					}
-				}
-			}
 		},
 		onLoad(options) {
 			// 优先从 globalData 读取（站内跳转）
@@ -269,7 +229,8 @@
 			const encoded = this.encodeShareData()
 			return {
 				title: '自驾游预算报告：总花费 ¥' + this.formatMoney(this.totalCost),
-				path: '/pages/report/report?d=' + encoded
+				path: '/pages/report/report?d=' + encoded,
+				query: 'd=' + encoded
 			}
 		},
 		onShareTimeline() {
@@ -357,6 +318,14 @@
 			formatNumber(v) {
 				const n = Number(v) || 0
 				return n.toLocaleString('zh-CN')
+			},
+			// 金额保留 3 位小数（用于每公里花费）
+			formatMoney3(v) {
+				const n = Number(v) || 0
+				return n.toLocaleString('zh-CN', {
+					minimumFractionDigits: 3,
+					maximumFractionDigits: 3
+				})
 			}
 		}
 	}
@@ -370,46 +339,63 @@
 		box-sizing: border-box;
 	}
 
-	/* ============ 顶部摘要 ============ */
-	.summary-row {
-		display: flex;
-		gap: 20rpx;
+	/* ============ 顶部摘要（单卡片总览） ============ */
+	.summary-hero {
+		background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+		border-radius: 28rpx;
+		box-shadow: 0 8rpx 28rpx rgba(16, 185, 129, 0.28);
+		padding: 36rpx 32rpx 28rpx;
 		margin-bottom: 24rpx;
-	}
-	.summary-card {
-		flex: 1;
-		background-color: var(--bg-card);
-		border-radius: 24rpx;
-		box-shadow: var(--shadow-card);
-		padding: 28rpx 24rpx;
 		display: flex;
 		flex-direction: column;
+		align-items: center;
+	}
+	.summary-hero-label {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.85);
+		letter-spacing: 2rpx;
+	}
+	.summary-hero-amount {
+		font-size: 64rpx;
+		font-weight: 700;
+		color: #fff;
+		line-height: 1.3;
+		letter-spacing: 1rpx;
+		margin: 8rpx 0 20rpx;
+	}
+	.summary-hero-divider {
+		width: 100%;
+		height: 1rpx;
+		background-color: rgba(255, 255, 255, 0.25);
+		margin-bottom: 24rpx;
+	}
+	.summary-hero-stats {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: space-around;
+	}
+	.stat-item {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
 		gap: 8rpx;
 	}
-	/* 仅一人时，总花费卡片占满全宽，文字居中 */
-	.summary-single .summary-card {
-		padding: 36rpx 32rpx;
-		align-items: center;
-		text-align: center;
+	.stat-value {
+		font-size: 30rpx;
+		font-weight: 600;
+		color: #fff;
 	}
-	.summary-single .summary-amount {
-		font-size: 52rpx;
-	}
-	.summary-label {
-		font-size: 24rpx;
-		color: var(--text-tertiary);
-	}
-	.summary-amount {
-		font-size: 44rpx;
-		font-weight: 700;
-		color: var(--primary);
-		line-height: 1.2;
-		letter-spacing: 0.5rpx;
-	}
-	.summary-sub {
+	.stat-label {
 		font-size: 22rpx;
-		color: var(--text-secondary);
-		margin-top: 4rpx;
+		color: rgba(255, 255, 255, 0.8);
+	}
+	.stat-divider {
+		width: 1rpx;
+		height: 48rpx;
+		background-color: rgba(255, 255, 255, 0.25);
+		flex-shrink: 0;
 	}
 
 	/* ============ 图表区 ============ */
@@ -422,6 +408,8 @@
 		flex-direction: column;
 		min-width: 0;
 		margin-bottom: 20rpx;
+		box-sizing: border-box;
+		overflow: hidden;
 	}
 	.chart-card-full {
 		width: 100%;
@@ -446,6 +434,8 @@
 	.chart-box {
 		width: 100%;
 		height: 360rpx;
+		box-sizing: border-box;
+		overflow: hidden;
 	}
 	.chart-box-tall {
 		height: 460rpx;
