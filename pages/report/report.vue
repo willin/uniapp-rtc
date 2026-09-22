@@ -23,6 +23,7 @@
 			</view>
 		</view>
 
+		<!-- #ifndef MP-WEIXIN || MP-QQ || MP-TOUTIAO -->
 		<view class="chart-card chart-card-full">
 			<view class="chart-title">
 				<view class="chart-title-bar"></view>
@@ -37,6 +38,24 @@
 				/>
 			</view>
 		</view>
+		<!-- #endif -->
+		<!-- #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO -->
+		<!-- 小程序端：弹框打开时隐藏图表，避免 canvas 原生组件层级穿透盖住弹框 -->
+		<view v-if="!showPosterModal" class="chart-card chart-card-full">
+			<view class="chart-title">
+				<view class="chart-title-bar"></view>
+				<text>费用占比</text>
+			</view>
+			<view class="chart-box chart-box-tall">
+				<qiun-data-charts
+					type="rose"
+					:chartData="pieData"
+					:opts="pieOpts"
+					:reshow="reshow"
+				/>
+			</view>
+		</view>
+		<!-- #endif -->
 
 		<!-- 颜色图例 -->
 		<view class="legend-row">
@@ -213,6 +232,8 @@
 				return {
 					color: COLOR_LIST,
 					padding: [10, 10, 10, 10],
+					animation: true,
+					duration: 600,
 					legend: { show: false },
 					extra: {
 						rose: {
@@ -256,11 +277,9 @@
 			}
 		},
 		onReady() {
-			// 页面首次渲染完成后触发图表重绘
-			this.$nextTick(() => {
-				this.reshow = true
-				setTimeout(() => { this.reshow = false }, 200)
-			})
+			// 布局完成后触发一次图表重绘，确保容器尺寸正确
+			// 只设为 true 且不切换回 false，避免反复重绘和动画重放
+			this.reshow = true;
 		},
 		// #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO
 		onShareAppMessage() {
@@ -281,18 +300,21 @@
 		// #endif
 		methods: {
 			applyData(data) {
-				this.totalMileage = data.totalMileage || 0
-				this.people = data.people || 1
-				this.days = data.days || 0
-				this.vehicleType = data.vehicleType || ''
-				this.totalCost = data.totalCost || 0
-				this.perPerson = data.perPerson || 0
-				this.categories = (data.categories || []).map(c => ({
-					key: c.key,
-					name: c.name,
-					value: Number(c.value) || 0
-				}))
-				this.extraItems = data.extraItems || []
+				// 批量赋值，减少多次响应式触发
+				Object.assign(this, {
+					totalMileage: data.totalMileage || 0,
+					people: data.people || 1,
+					days: data.days || 0,
+					vehicleType: data.vehicleType || '',
+					totalCost: data.totalCost || 0,
+					perPerson: data.perPerson || 0,
+					categories: (data.categories || []).map(c => ({
+						key: c.key,
+						name: c.name,
+						value: Number(c.value) || 0
+					})),
+					extraItems: data.extraItems || []
+				})
 			},
 			// 将当前页面数据编码为紧凑 URL 参数
 			encodeShareData() {
