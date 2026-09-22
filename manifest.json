@@ -59,7 +59,12 @@
         },
         "usingComponents" : true,
         "darkmode" : true,
-        "themeLocation" : "theme.json"
+        "themeLocation" : "theme.json",
+        "permission" : {
+            "scope.writePhotosAlbum" : {
+                "desc" : "用于保存自驾游预算报告海报到相册"
+            }
+        }
     },
     "mp-alipay" : {
         "usingComponents" : true
