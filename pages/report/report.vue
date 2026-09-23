@@ -134,10 +134,12 @@
 
 		<!-- 分享按钮（仅小程序端） -->
 		<view class="share-btn-row">
+			<!-- #ifdef MP-WEIXIN -->
 			<button class="share-btn share-btn-img" @tap="generatePoster">
 				<uni-icons type="image" size="18" color="#fff" />
 				<text>图片分享</text>
 			</button>
+			<!-- #endif -->
 			<!-- #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO -->
 			<button class="share-btn" open-type="share">
 				<uni-icons type="redo" size="18" color="#fff" />
@@ -285,7 +287,7 @@
 		onShareAppMessage() {
 			const encoded = this.encodeShareData()
 			return {
-				title: '自驾游预算报告：总花费 ¥' + this.formatMoney(this.totalCost),
+				title: '自驾游开销报告：总花费 ¥' + this.formatMoney(this.totalCost),
 				path: '/pages/report/report?d=' + encoded,
 				query: 'd=' + encoded
 			}
@@ -293,7 +295,7 @@
 		onShareTimeline() {
 			const encoded = this.encodeShareData()
 			return {
-				title: '自驾游预算报告：总花费 ¥' + this.formatMoney(this.totalCost),
+				title: '自驾游开销报告：总花费 ¥' + this.formatMoney(this.totalCost),
 				query: 'd=' + encoded
 			}
 		},
@@ -721,7 +723,7 @@
 						ctx.fillStyle = '#1f2937'
 						setFont(16)
 						ctx.textAlign = 'center'
-						ctx.fillText('自驾游预算计算器', W / 2, footerY + qrSize + 24)
+						ctx.fillText('自驾游开销计算器', W / 2, footerY + qrSize + 24)
 						ctx.fillStyle = '#9ca3af'
 						setFont(12)
 						ctx.fillText('扫码进入小程序，估算你的旅行开销', W / 2, footerY + qrSize + 44)
